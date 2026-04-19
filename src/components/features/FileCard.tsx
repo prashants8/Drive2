@@ -142,28 +142,28 @@ export const FileCard: React.FC<FileCardProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 pt-4 border-t border-white/5">
+      <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-white/5">
         <Button
           variant="secondary"
           size="sm"
           onClick={(e) => { e.stopPropagation(); onPreview(file); }}
-          className="h-9 px-0 bg-slate-800/50 hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-300 hover:text-white border-none"
+          className="flex-1 h-9 min-w-[70px] bg-slate-800/50 hover:bg-slate-700 rounded-xl text-[11px] font-bold text-slate-300 hover:text-white border-none"
         >
-          <Eye className="w-4 h-4 mr-2" /> View
+          <Eye className="w-3.5 h-3.5 mr-1.5" /> View
         </Button>
         <Button
           variant="secondary"
           size="sm"
           onClick={(e) => { e.stopPropagation(); window.open(file.file_url, '_blank'); }}
-          className="h-9 px-0 bg-slate-800/50 hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-300 hover:text-white border-none"
+          className="flex-1 h-9 min-w-[70px] bg-slate-800/50 hover:bg-slate-700 rounded-xl text-[11px] font-bold text-slate-300 hover:text-white border-none"
         >
-          <Download className="w-4 h-4 mr-2" /> Get
+          <Download className="w-3.5 h-3.5 mr-1.5" /> Get
         </Button>
-        <div className="relative group/more">
+        <div className="relative group/more flex-1 min-w-[70px]">
           <Button
             variant="secondary"
             size="sm"
-            className="w-full h-9 bg-slate-800/50 hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-300 hover:text-white border-none"
+            className="w-full h-9 bg-slate-800/50 hover:bg-slate-700 rounded-xl text-[11px] font-bold text-slate-300 hover:text-white border-none"
           >
             More
           </Button>

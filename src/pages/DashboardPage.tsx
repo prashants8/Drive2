@@ -168,8 +168,8 @@ export function DashboardPage({ user }: DashboardPageProps) {
               </Button>
             )}
 
-          <div className="flex items-center gap-3">
-            <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1 mr-2">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full md:w-auto">
+            <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1 shrink-0">
               <button 
                 onClick={() => setLayoutMode('grid')}
                 className={cn(
@@ -189,8 +189,8 @@ export function DashboardPage({ user }: DashboardPageProps) {
                 <List className="w-4 h-4" />
               </button>
             </div>
-
-              <div className="relative w-72">
+ 
+              <div className="relative w-full sm:w-72 shrink-0 lg:shrink">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="text"
@@ -214,13 +214,16 @@ export function DashboardPage({ user }: DashboardPageProps) {
             )}
 
             {/* Stats Overview */}
-            <div className="grid grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
               {[
                 { label: 'Total Files', value: stats.total, sub: 'Successfully stored' },
                 { label: 'Cloud Usage', value: (stats.size / 1024 / 1024).toFixed(2) + ' MB', sub: 'Of free tier storage' },
                 { label: 'Last Upload', value: stats.latest, sub: 'Recent activity' },
               ].map((stat, i) => (
-                <div key={i} className="p-6 bg-slate-900/30 border border-slate-800/50 rounded-2xl">
+                <div key={i} className={cn(
+                  "p-6 bg-slate-900/30 border border-slate-800/50 rounded-2xl",
+                  i === 2 && "sm:col-span-2 md:col-span-1"
+                )}>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">{stat.label}</p>
                   <p className="text-2xl font-bold text-white">{stat.value}</p>
                   <p className="text-xs text-slate-600 mt-1">{stat.sub}</p>

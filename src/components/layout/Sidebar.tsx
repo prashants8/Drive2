@@ -26,7 +26,7 @@ export function Sidebar({ activeTab, setActiveTab, onLogout, itemCount, storageU
   const [showNewMenu, setShowNewMenu] = React.useState(false);
 
   return (
-    <aside className="w-full h-full bg-slate-900 border-r border-slate-800 flex flex-col z-[100]">
+    <aside className="w-full h-full bg-slate-900 border-r border-slate-800 flex flex-col z-[100] overflow-y-auto overflow-x-hidden">
       <div className="p-8">
         <div className="flex items-center gap-3 mb-8 group cursor-pointer">
           <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/30 group-hover:scale-110 transition-transform">

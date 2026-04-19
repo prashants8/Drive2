@@ -164,32 +164,32 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, user, on
   return (
     <div className="fixed inset-0 z-[120] flex flex-col bg-slate-950 animate-in fade-in duration-300">
       {/* Top Bar */}
-      <div className="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-slate-900/50 backdrop-blur-md">
-        <div className="flex items-center gap-4">
+      <div className="h-16 flex items-center justify-between px-4 sm:px-6 border-b border-white/5 bg-slate-900/50 backdrop-blur-md shrink-0">
+        <div className="flex items-center gap-2 sm:gap-4 overflow-hidden">
           <button 
             onClick={onClose}
-            className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-all"
+            className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-all shrink-0"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+          <div className="flex items-center gap-2 sm:gap-3 overflow-hidden">
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 shrink-0">
               {editorType === 'code' ? <Code className="w-4 h-4" /> : 
                editorType === 'rich-text' ? <FileText className="w-4 h-4" /> : 
                editorType === 'spreadsheet' ? <Table className="w-4 h-4" /> :
                <Maximize2 className="w-4 h-4" />}
             </div>
-            <div>
-              <h2 className="text-sm font-bold text-white leading-none">{file.file_name}</h2>
-              <p className="text-[10px] text-slate-500 uppercase tracking-tighter mt-1">
+            <div className="overflow-hidden">
+              <h2 className="text-xs sm:text-sm font-bold text-white leading-none truncate">{file.file_name}</h2>
+              <p className="text-[9px] sm:text-[10px] text-slate-500 uppercase tracking-tighter mt-1 truncate">
                 {editorType?.toUpperCase()} EDITOR
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
-          <div className="flex -space-x-2">
+        <div className="flex items-center gap-2 sm:gap-6 ml-2">
+          <div className="hidden md:flex -space-x-2">
             {users.map((u, i) => (
               <div 
                 key={i} 
@@ -199,27 +199,19 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, user, on
                 {u.email?.charAt(0)}
               </div>
             ))}
-            {users.length > 0 && <span className="ml-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest self-center">Editing Now</span>}
+            {users.length > 0 && <span className="ml-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest self-center">Editing</span>}
           </div>
 
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={onClose}
-              className="text-slate-400 hover:text-white"
-            >
-              Discard
-            </Button>
-            <Button 
-              size="sm"
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button 
               onClick={handleSave}
               disabled={saving}
-              className="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-6"
+              className="flex items-center justify-center h-9 w-9 sm:w-auto sm:px-4 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-all"
+              title="Save Changes"
             >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-              Save Changes
-            </Button>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span className="hidden sm:inline-block ml-2 text-xs font-bold">Save Changes</span>
+            </button>
           </div>
         </div>
       </div>
