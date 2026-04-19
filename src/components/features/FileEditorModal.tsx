@@ -1,16 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { UserFile } from '@/src/types';
 import { X, Save, Loader2, Maximize2, Minimize2, FileText, Code, Table, ChevronLeft } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { isEditable } from '@/src/lib/fileUtils';
-import Editor from '@monaco-editor/react';
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Papa from 'papaparse';
-import * as mammoth from 'mammoth';
-import * as XLSX from 'xlsx';
 import { useRealtimeCollaboration } from '@/src/hooks/useRealtimeCollaboration';
-import { OnlyOfficeEditor } from './OnlyOfficeEditor';
+
+// Lazy loaded editors
+const CodeEditor = lazy(() => import('./editors/CodeEditor').then(m => ({ default: m.CodeEditor })));
+const RichTextEditor = lazy(() => import('./editors/RichTextEditor').then(m => ({ default: m.RichTextEditor })));
+const SpreadsheetEditor = lazy(() => import('./editors/SpreadsheetEditor').then(m => ({ default: m.SpreadsheetEditor })));
+const OnlyOfficeEditor = lazy(() => import('./OnlyOfficeEditor').then(m => ({ default: m.OnlyOfficeEditor })));
 
 interface FileEditorModalProps {
   file: UserFile;
@@ -58,6 +57,7 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, user, on
           
           if (isZip) {
             try {
+              const mammoth = await import('mammoth');
               const result = await mammoth.convertToHtml({ arrayBuffer });
               setContent(result.value);
             } catch (err) {
@@ -78,6 +78,7 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, user, on
 
           if (isZip) {
             try {
+              const XLSX = await import('xlsx');
               const workbook = XLSX.read(arrayBuffer, { type: 'array' });
               const firstSheetName = workbook.SheetNames[0];
               const worksheet = workbook.Sheets[firstSheetName];
@@ -107,14 +108,10 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, user, on
     let finalContent: string | Blob = content;
     const name = file.file_name.toLowerCase();
     
-    // Tiptap save logic if active
-    if (editorType === 'rich-text' && richTextEditor) {
-      finalContent = richTextEditor.getHTML();
-    }
-
     // Spreadsheet save logic
     if (editorType === 'spreadsheet' && (name.endsWith('.xlsx') || name.endsWith('.xls'))) {
       try {
+        const XLSX = await import('xlsx');
         const jsonData = JSON.parse(content);
         const worksheet = XLSX.utils.aoa_to_sheet(jsonData);
         const workbook = XLSX.utils.book_new();
@@ -130,25 +127,6 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, user, on
     if (success) onClose();
     setSaving(false);
   };
-
-  // Tiptap Editor
-  const richTextEditor = useEditor({
-    extensions: [StarterKit],
-    content: content,
-    onUpdate: ({ editor }) => {
-      const newHtml = editor.getHTML();
-      setContent(newHtml);
-      broadcastEdit(newHtml);
-    },
-  });
-
-  useEffect(() => {
-    if (richTextEditor && content && editorType === 'rich-text') {
-      if (richTextEditor.getHTML() !== content) {
-        richTextEditor.commands.setContent(content, { emitUpdate: false });
-      }
-    }
-  }, [content, richTextEditor, editorType]);
 
   if (loading) {
     return (
@@ -217,189 +195,52 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, user, on
       </div>
 
       <div className="flex-1 overflow-hidden bg-slate-950">
-        {editorType === 'onlyoffice' && (
-          <OnlyOfficeEditor 
-            file={file} 
-            userId={user?.id} 
-            onClose={onClose} 
-          />
-        )}
-
-        {editorType === 'code' && (
-          <Editor
-            theme="vs-dark"
-            defaultLanguage={getFileLanguage(file.file_name)}
-            defaultValue={content}
-            onChange={(val) => {
-              const newContent = val || '';
-              setContent(newContent);
-              broadcastEdit(newContent);
-            }}
-            options={{
-              fontSize: 14,
-              minimap: { enabled: true },
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              padding: { top: 20 }
-            }}
-          />
-        )}
-
-        {editorType === 'rich-text' && (
-          <div className="max-w-4xl mx-auto h-full bg-slate-900 overflow-auto border-x border-white/5 flex flex-col">
-            <div className="p-4 border-b border-white/5 flex flex-wrap gap-2 bg-slate-900 sticky top-0 z-10">
-              <ToolbarButton 
-                onClick={() => richTextEditor?.chain().focus().toggleBold().run()} 
-                active={richTextEditor?.isActive('bold')} 
-                label="B" 
-                className="font-bold" 
-              />
-              <ToolbarButton 
-                onClick={() => richTextEditor?.chain().focus().toggleItalic().run()} 
-                active={richTextEditor?.isActive('italic')} 
-                label="I" 
-                className="italic" 
-              />
-              <ToolbarButton 
-                onClick={() => richTextEditor?.chain().focus().toggleHeading({ level: 1 }).run()} 
-                active={richTextEditor?.isActive('heading', { level: 1 })} 
-                label="H1" 
-              />
-              <ToolbarButton 
-                onClick={() => richTextEditor?.chain().focus().toggleHeading({ level: 2 }).run()} 
-                active={richTextEditor?.isActive('heading', { level: 2 })} 
-                label="H2" 
-              />
-              <ToolbarButton 
-                onClick={() => richTextEditor?.chain().focus().toggleBulletList().run()} 
-                active={richTextEditor?.isActive('bulletList')} 
-                label="Bullet" 
-              />
-            </div>
-            <div className="flex-1 p-12 focus:outline-none prose prose-invert max-w-none">
-              <EditorContent editor={richTextEditor} />
-            </div>
+        <Suspense fallback={
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
           </div>
-        )}
+        }>
+          {editorType === 'onlyoffice' && (
+            <OnlyOfficeEditor 
+              file={file} 
+              userId={user?.id} 
+              onClose={onClose} 
+            />
+          )}
 
-        {editorType === 'spreadsheet' && (
-          <SpreadsheetEditor file={file} content={content} onChange={(newVal) => {
-            setContent(newVal);
-            broadcastEdit(newVal);
-          }} />
-        )}
+          {editorType === 'code' && (
+            <CodeEditor
+              fileName={file.file_name}
+              content={content}
+              onChange={(val) => {
+                setContent(val);
+                broadcastEdit(val);
+              }}
+            />
+          )}
+
+          {editorType === 'rich-text' && (
+            <RichTextEditor
+              content={content}
+              onChange={(val) => {
+                setContent(val);
+                broadcastEdit(val);
+              }}
+            />
+          )}
+
+          {editorType === 'spreadsheet' && (
+            <SpreadsheetEditor 
+              file={file} 
+              content={content} 
+              onChange={(newVal) => {
+                setContent(newVal);
+                broadcastEdit(newVal);
+              }} 
+            />
+          )}
+        </Suspense>
       </div>
     </div>
   );
-};
-
-const ToolbarButton = ({ onClick, active, label, className = '' }: any) => (
-  <button 
-    onClick={onClick}
-    className={`w-8 h-8 rounded flex items-center justify-center text-xs font-medium transition-all ${
-      active ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-    } ${className}`}
-  >
-    {label}
-  </button>
-);
-
-const SpreadsheetEditor = ({ file, content, onChange }: { file: UserFile, content: string, onChange: (val: string) => void }) => {
-  const [data, setData] = useState<any[][]>([]);
-  const name = file.file_name.toLowerCase();
-  
-  useEffect(() => {
-    try {
-      if (name.endsWith('.csv')) {
-        const parsed = Papa.parse(content, { header: false });
-        setData(parsed.data as any[][]);
-      } else {
-        // Assume JSON array for XLSX/XLS during session
-        const parsed = JSON.parse(content || '[]');
-        setData(Array.isArray(parsed) ? parsed : []);
-      }
-    } catch (e) {
-      setData([]);
-    }
-  }, [content, name]);
-
-  const updateCell = (rowIndex: number, colIndex: number, value: string) => {
-    const newData = [...data];
-    if (!newData[rowIndex]) newData[rowIndex] = [];
-    newData[rowIndex][colIndex] = value;
-    setData(newData);
-    
-    if (name.endsWith('.csv')) {
-      onChange(Papa.unparse(newData));
-    } else {
-      onChange(JSON.stringify(newData));
-    }
-  };
-
-  const addRow = () => {
-    const newRow = new Array(data[0]?.length || 1).fill('');
-    const newData = [...data, newRow];
-    setData(newData);
-    
-    if (name.endsWith('.csv')) {
-      onChange(Papa.unparse(newData));
-    } else {
-      onChange(JSON.stringify(newData));
-    }
-  };
-
-  return (
-    <div className="w-full h-full overflow-auto bg-slate-950 p-8">
-      <div className="bg-slate-900 border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
-        <table className="w-full text-left border-collapse min-w-full">
-          <thead>
-            <tr className="bg-slate-800/50">
-              {data[0]?.map((_, i) => (
-                <th key={i} className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase border-b border-r border-white/5">
-                  Col {i + 1}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((row, rowIndex) => (
-              <tr key={rowIndex} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                {row.map((cell, colIndex) => (
-                  <td key={colIndex} className="border-r border-white/5 p-0">
-                    <input 
-                      type="text" 
-                      value={cell}
-                      onChange={(e) => updateCell(rowIndex, colIndex, e.target.value)}
-                      className="w-full h-full px-4 py-3 bg-transparent text-slate-300 text-sm focus:outline-none focus:bg-indigo-500/10 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
-                    />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <button 
-          onClick={addRow}
-          className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-bold uppercase tracking-widest transition-all"
-        >
-          + Add New Row
-        </button>
-      </div>
-    </div>
-  );
-};
-
-const getFileLanguage = (fileName: string) => {
-  const ext = fileName.split('.').pop()?.toLowerCase();
-  switch (ext) {
-    case 'js': case 'jsx': return 'javascript';
-    case 'ts': case 'tsx': return 'typescript';
-    case 'html': return 'html';
-    case 'css': return 'css';
-    case 'json': return 'json';
-    case 'md': return 'markdown';
-    case 'py': return 'python';
-    case 'sql': return 'sql';
-    default: return 'plaintext';
-  }
 };
