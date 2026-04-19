@@ -16,10 +16,17 @@ async function startServer() {
   const PORT = 3000;
 
   // Supabase admin client (optional, depending on RLS)
-  const supabase = createClient(
-    process.env.VITE_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY!
-  );
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('CRITICAL: Supabase credentials are missing (VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY/SUPABASE_SERVICE_ROLE_KEY).');
+    console.log('App will continue to start but database features may fail.');
+  }
+
+  const supabase = (supabaseUrl && supabaseKey) 
+    ? createClient(supabaseUrl, supabaseKey)
+    : null;
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
@@ -27,6 +34,7 @@ async function startServer() {
   // OnlyOffice Callback Handler
   app.post('/api/onlyoffice/callback', async (req, res) => {
     try {
+      if (!supabase) throw new Error('Supabase client not initialized due to missing credentials');
       // Verify JWT if enabled
       if (process.env.ONLYOFFICE_JWT_SECRET) {
         const header = process.env.ONLYOFFICE_JWT_HEADER || 'Authorization';
@@ -123,6 +131,8 @@ async function startServer() {
   // OnlyOffice Config Endpoint
   app.get('/api/onlyoffice/config', async (req, res) => {
     try {
+      if (!supabase) throw new Error('Supabase client not initialized due to missing credentials');
+      
       const { fileId, userId, mode = 'edit' } = req.query;
       
       const { data: file, error } = await supabase
