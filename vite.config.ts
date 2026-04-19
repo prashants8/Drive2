@@ -21,8 +21,18 @@ export default defineConfig(({mode}) => {
       hmr: process.env.DISABLE_HMR !== 'true',
     },
     build: {
-      chunkSizeWarningLimit: 2000,
+      chunkSizeWarningLimit: 3000,
       reportCompressedSize: false,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            'vendor-utils': ['@supabase/supabase-js', 'lucide-react', 'clsx', 'tailwind-merge'],
+            'vendor-editors': ['@monaco-editor/react', '@tiptap/react', '@tiptap/starter-kit', '@onlyoffice/document-editor-react'],
+            'vendor-files': ['xlsx', 'mammoth', 'papaparse'],
+          },
+        },
+      },
     },
   };
 });
