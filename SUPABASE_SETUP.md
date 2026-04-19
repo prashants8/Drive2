@@ -87,6 +87,45 @@ to authenticated
 using (
   bucket_id = 'user-files'
 );
+
+-- Advanced Features Migration
+alter table files add column if not exists is_trashed boolean default false;
+alter table files add column if not exists version integer default 1;
+alter table files add column if not exists permission text default 'view';
+
+alter table folders add column if not exists is_trashed boolean default false;
+
+-- Create file_versions table
+create table if not exists file_versions (
+  id uuid default gen_random_uuid() primary key,
+  file_id uuid references files(id) on delete cascade not null,
+  file_url text not null,
+  version_number integer not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  created_by uuid references auth.users not null
+);
+
+alter table file_versions enable row level security;
+
+create policy "Users can view versions of their files"
+  on file_versions for select
+  using ( 
+    exists (
+      select 1 from files 
+      where files.id = file_versions.file_id 
+      and files.user_id = auth.uid()
+    )
+  );
+
+create policy "Users can create versions of their files"
+  on file_versions for insert
+  with check ( 
+    exists (
+      select 1 from files 
+      where files.id = file_versions.file_id 
+      and files.user_id = auth.uid()
+    )
+  );
 ```
 
 ## 5. Deployment

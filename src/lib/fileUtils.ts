@@ -5,7 +5,7 @@ export const isEditable = (file: UserFile) => {
   const type = file.file_type.toLowerCase();
 
   // Rich Text
-  if (name.endsWith('.docx')) {
+  if (name.endsWith('.docx') || name.endsWith('.doc')) {
     return 'rich-text';
   }
 
@@ -22,13 +22,18 @@ export const isEditable = (file: UserFile) => {
     name.endsWith('.md') ||
     name.endsWith('.py') ||
     name.endsWith('.sh') ||
-    name.endsWith('.sql')
+    name.endsWith('.sql') ||
+    name.endsWith('.txt') ||
+    name.endsWith('.xml') ||
+    name.endsWith('.yml') ||
+    name.endsWith('.yaml') ||
+    name.endsWith('.env')
   ) {
     return 'code';
   }
 
   // Spreadsheet
-  if (name.endsWith('.csv')) {
+  if (name.endsWith('.csv') || name.endsWith('.xlsx') || name.endsWith('.xls')) {
     return 'spreadsheet';
   }
 

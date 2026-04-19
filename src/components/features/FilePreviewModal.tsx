@@ -7,11 +7,12 @@ import { isEditable } from '@/src/lib/fileUtils';
 
 interface FilePreviewModalProps {
   file: UserFile;
+  user: any;
   onClose: () => void;
   onEdit: (file: UserFile) => void;
 }
 
-export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClose, onEdit }) => {
+export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, user, onClose, onEdit }) => {
   const editable = isEditable(file);
 
   return (
@@ -62,7 +63,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ file, onClos
 
         {/* Preview Area */}
         <div className="flex-1 bg-slate-950 relative overflow-hidden">
-          <AdvancedFilePreview file={file} />
+          <AdvancedFilePreview file={file} userId={user?.id} />
         </div>
       </div>
     </div>

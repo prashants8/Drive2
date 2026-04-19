@@ -4,6 +4,7 @@ export interface UserFolder {
   parent_id: string | null;
   user_id: string;
   created_at: string;
+  is_trashed: boolean;
 }
 
 export interface UserFile {
@@ -17,6 +18,19 @@ export interface UserFile {
   is_public: boolean;
   share_token: string | null;
   created_at: string;
+  is_trashed: boolean;
+  version: number;
+  permission: 'view' | 'edit';
+  updated_at?: string;
+}
+
+export interface FileVersion {
+  id: string;
+  file_id: string;
+  file_url: string;
+  version_number: number;
+  created_at: string;
+  created_by: string;
 }
 
 export interface AuthUser {

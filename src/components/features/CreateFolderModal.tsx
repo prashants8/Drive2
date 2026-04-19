@@ -35,14 +35,16 @@ export const CreateFolderModal: React.FC<CreateFolderModalProps> = ({ onClose, o
           </button>
         </div>
 
-        <Input
-          label="Folder Name"
-          placeholder="Enter folder name..."
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          autoFocus
-          className="bg-slate-950 border-slate-800"
-        />
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Folder Name</label>
+          <Input
+            placeholder="Enter folder name..."
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+            className="bg-slate-950 border-slate-800"
+          />
+        </div>
 
         <div className="flex items-center gap-3 pt-4">
           <Button variant="ghost" onClick={onClose} className="flex-1 rounded-xl">

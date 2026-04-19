@@ -4,15 +4,20 @@ import { supabase } from '@/src/lib/supabase';
 import { UserFile } from '@/src/types';
 import { AdvancedFilePreview } from '@/src/components/features/AdvancedFilePreview';
 import { Button } from '@/src/components/ui/Button';
-import { Download, Share2, AlertCircle, Loader2, HardDrive } from 'lucide-react';
+import { Download, Share2, AlertCircle, Loader2, HardDrive, Edit3 } from 'lucide-react';
+import { FileEditorModal } from '@/src/components/features/FileEditorModal';
+import { useStorage } from '@/src/hooks/useStorage';
 import toast from 'react-hot-toast';
 
 export const SharePage: React.FC = () => {
   const { token } = useParams<{ token: string }>();
   const [file, setFile] = useState<UserFile | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  const { saveFileContent, getFileContent, getFileArrayBuffer } = useStorage(undefined);
 
   useEffect(() => {
     const fetchSharedFile = async () => {
@@ -97,8 +102,16 @@ export const SharePage: React.FC = () => {
             </div>
             <div className="flex items-center gap-3">
                <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                 <Share2 className="w-3 h-3" /> Public
+                 <Share2 className="w-3 h-3" /> Public {file.permission?.toUpperCase() || 'VIEW'}
                </div>
+               {file.permission === 'edit' && (
+                 <Button 
+                   onClick={() => setShowEditor(true)}
+                   className="rounded-lg h-9 px-4 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-500/30"
+                 >
+                   <Edit3 className="w-3.5 h-3.5 mr-2" /> Edit Online
+                 </Button>
+               )}
             </div>
           </div>
 
@@ -117,6 +130,17 @@ export const SharePage: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {showEditor && file.permission === 'edit' && (
+        <FileEditorModal
+          file={file}
+          user={{ id: 'anonymous-' + Math.random().toString(36).substring(2), email: 'Guest Editor' }}
+          onClose={() => setShowEditor(null as any)}
+          onSave={saveFileContent}
+          getContent={getFileContent}
+          getBinaryContent={getFileArrayBuffer}
+        />
+      )}
       
       <footer className="py-8 text-center text-slate-600 text-xs border-t border-slate-900 mt-20">
         &copy; {new Date().getFullYear()} DriveTo Storage. All rights reserved.

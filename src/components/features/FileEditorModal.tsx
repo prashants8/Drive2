@@ -8,35 +8,89 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Papa from 'papaparse';
 import * as mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
+import { useRealtimeCollaboration } from '@/src/hooks/useRealtimeCollaboration';
+import { OnlyOfficeEditor } from './OnlyOfficeEditor';
 
 interface FileEditorModalProps {
   file: UserFile;
+  user: any;
   onClose: () => void;
   onSave: (file: UserFile, content: string | Blob) => Promise<boolean>;
   getContent: (file: UserFile) => Promise<string | null>;
   getBinaryContent: (file: UserFile) => Promise<ArrayBuffer | null>;
 }
 
-export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, onClose, onSave, getContent, getBinaryContent }) => {
+export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, user, onClose, onSave, getContent, getBinaryContent }) => {
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [editorType, setEditorType] = useState<'code' | 'rich-text' | 'spreadsheet' | null>(null);
+  const [editorType, setEditorType] = useState<'code' | 'rich-text' | 'spreadsheet' | 'onlyoffice' | null>(null);
+
+  const { users, lastMessage, broadcastEdit } = useRealtimeCollaboration(file.id, user);
 
   useEffect(() => {
     const type = isEditable(file);
+    const name = file.file_name.toLowerCase();
+    
+    // Check for OnlyOffice support first
+    const isOnlyOfficeSupported = [
+      '.docx', '.doc', '.dotx', '.xlsx', '.xls', '.xltx', '.csv', '.pptx', '.ppt', '.potx'
+    ].some(ext => name.endsWith(ext));
+
+    if (isOnlyOfficeSupported) {
+      setEditorType('onlyoffice');
+      setLoading(false);
+      return;
+    }
+
     setEditorType(type);
 
     const load = async () => {
-      if (type === 'rich-text' && file.file_name.toLowerCase().endsWith('.docx')) {
+      const name = file.file_name.toLowerCase();
+      
+      if (type === 'rich-text' && (name.endsWith('.docx') || name.endsWith('.doc'))) {
         const arrayBuffer = await getBinaryContent(file);
         if (arrayBuffer) {
-          try {
-            const result = await mammoth.convertToHtml({ arrayBuffer });
-            setContent(result.value);
-          } catch (err) {
-            console.error('Mammoth conversion error:', err);
-            setContent('<p>Error converting document for editing.</p>');
+          // Check if it's actually a zip file (Office files are zips)
+          const uint8 = new Uint8Array(arrayBuffer.slice(0, 4));
+          const isZip = uint8[0] === 0x50 && uint8[1] === 0x4B && uint8[2] === 0x03 && uint8[3] === 0x04;
+          
+          if (isZip) {
+            try {
+              const result = await mammoth.convertToHtml({ arrayBuffer });
+              setContent(result.value);
+            } catch (err) {
+              console.error('Mammoth conversion error:', err);
+              setContent('<p>Error converting document for editing.</p>');
+            }
+          } else {
+            // Probably already converted to HTML in a previous save
+            const text = new TextDecoder().decode(arrayBuffer);
+            setContent(text);
+          }
+        }
+      } else if (type === 'spreadsheet' && (name.endsWith('.xlsx') || name.endsWith('.xls'))) {
+        const arrayBuffer = await getBinaryContent(file);
+        if (arrayBuffer) {
+          const uint8 = new Uint8Array(arrayBuffer.slice(0, 4));
+          const isZip = uint8[0] === 0x50 && uint8[1] === 0x4B && uint8[2] === 0x03 && uint8[3] === 0x04;
+
+          if (isZip) {
+            try {
+              const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+              const firstSheetName = workbook.SheetNames[0];
+              const worksheet = workbook.Sheets[firstSheetName];
+              const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+              setContent(JSON.stringify(jsonData));
+            } catch (err) {
+              console.error('XLSX read error:', err);
+              setContent('[]');
+            }
+          } else {
+            // Probably saved as JSON array previously
+            const text = new TextDecoder().decode(arrayBuffer);
+            setContent(text);
           }
         }
       } else {
@@ -51,10 +105,25 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, onClose,
   const handleSave = async () => {
     setSaving(true);
     let finalContent: string | Blob = content;
+    const name = file.file_name.toLowerCase();
     
     // Tiptap save logic if active
     if (editorType === 'rich-text' && richTextEditor) {
       finalContent = richTextEditor.getHTML();
+    }
+
+    // Spreadsheet save logic
+    if (editorType === 'spreadsheet' && (name.endsWith('.xlsx') || name.endsWith('.xls'))) {
+      try {
+        const jsonData = JSON.parse(content);
+        const worksheet = XLSX.utils.aoa_to_sheet(jsonData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        finalContent = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      } catch (err) {
+        console.error('Excel save error:', err);
+      }
     }
 
     const success = await onSave(file, finalContent);
@@ -67,13 +136,17 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, onClose,
     extensions: [StarterKit],
     content: content,
     onUpdate: ({ editor }) => {
-      setContent(editor.getHTML());
+      const newHtml = editor.getHTML();
+      setContent(newHtml);
+      broadcastEdit(newHtml);
     },
   });
 
   useEffect(() => {
     if (richTextEditor && content && editorType === 'rich-text') {
-      richTextEditor.commands.setContent(content);
+      if (richTextEditor.getHTML() !== content) {
+        richTextEditor.commands.setContent(content, { emitUpdate: false });
+      }
     }
   }, [content, richTextEditor, editorType]);
 
@@ -103,7 +176,8 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, onClose,
             <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
               {editorType === 'code' ? <Code className="w-4 h-4" /> : 
                editorType === 'rich-text' ? <FileText className="w-4 h-4" /> : 
-               <Table className="w-4 h-4" />}
+               editorType === 'spreadsheet' ? <Table className="w-4 h-4" /> :
+               <Maximize2 className="w-4 h-4" />}
             </div>
             <div>
               <h2 className="text-sm font-bold text-white leading-none">{file.file_name}</h2>
@@ -114,35 +188,61 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, onClose,
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={onClose}
-            className="text-slate-400 hover:text-white"
-          >
-            Discard
-          </Button>
-          <Button 
-            size="sm"
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-6"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-            Save Changes
-          </Button>
+        <div className="flex items-center gap-6">
+          <div className="flex -space-x-2">
+            {users.map((u, i) => (
+              <div 
+                key={i} 
+                className="w-8 h-8 rounded-full bg-slate-800 border-2 border-slate-900 flex items-center justify-center text-[10px] font-bold text-white uppercase"
+                title={u.email}
+              >
+                {u.email?.charAt(0)}
+              </div>
+            ))}
+            {users.length > 0 && <span className="ml-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest self-center">Editing Now</span>}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={onClose}
+              className="text-slate-400 hover:text-white"
+            >
+              Discard
+            </Button>
+            <Button 
+              size="sm"
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-indigo-600 hover:bg-indigo-500 rounded-lg px-6"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              Save Changes
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Editor Main Area */}
       <div className="flex-1 overflow-hidden bg-slate-950">
+        {editorType === 'onlyoffice' && (
+          <OnlyOfficeEditor 
+            file={file} 
+            userId={user?.id} 
+            onClose={onClose} 
+          />
+        )}
+
         {editorType === 'code' && (
           <Editor
             theme="vs-dark"
             defaultLanguage={getFileLanguage(file.file_name)}
             defaultValue={content}
-            onChange={(val) => setContent(val || '')}
+            onChange={(val) => {
+              const newContent = val || '';
+              setContent(newContent);
+              broadcastEdit(newContent);
+            }}
             options={{
               fontSize: 14,
               minimap: { enabled: true },
@@ -191,7 +291,10 @@ export const FileEditorModal: React.FC<FileEditorModalProps> = ({ file, onClose,
         )}
 
         {editorType === 'spreadsheet' && (
-          <CSVEditor content={content} onChange={setContent} />
+          <SpreadsheetEditor file={file} content={content} onChange={(newVal) => {
+            setContent(newVal);
+            broadcastEdit(newVal);
+          }} />
         )}
       </div>
     </div>
@@ -209,26 +312,48 @@ const ToolbarButton = ({ onClick, active, label, className = '' }: any) => (
   </button>
 );
 
-const CSVEditor = ({ content, onChange }: { content: string, onChange: (val: string) => void }) => {
+const SpreadsheetEditor = ({ file, content, onChange }: { file: UserFile, content: string, onChange: (val: string) => void }) => {
   const [data, setData] = useState<any[][]>([]);
+  const name = file.file_name.toLowerCase();
   
   useEffect(() => {
-    const parsed = Papa.parse(content, { header: false });
-    setData(parsed.data as any[][]);
-  }, [content]);
+    try {
+      if (name.endsWith('.csv')) {
+        const parsed = Papa.parse(content, { header: false });
+        setData(parsed.data as any[][]);
+      } else {
+        // Assume JSON array for XLSX/XLS during session
+        const parsed = JSON.parse(content || '[]');
+        setData(Array.isArray(parsed) ? parsed : []);
+      }
+    } catch (e) {
+      setData([]);
+    }
+  }, [content, name]);
 
   const updateCell = (rowIndex: number, colIndex: number, value: string) => {
     const newData = [...data];
+    if (!newData[rowIndex]) newData[rowIndex] = [];
     newData[rowIndex][colIndex] = value;
     setData(newData);
-    onChange(Papa.unparse(newData));
+    
+    if (name.endsWith('.csv')) {
+      onChange(Papa.unparse(newData));
+    } else {
+      onChange(JSON.stringify(newData));
+    }
   };
 
   const addRow = () => {
     const newRow = new Array(data[0]?.length || 1).fill('');
     const newData = [...data, newRow];
     setData(newData);
-    onChange(Papa.unparse(newData));
+    
+    if (name.endsWith('.csv')) {
+      onChange(Papa.unparse(newData));
+    } else {
+      onChange(JSON.stringify(newData));
+    }
   };
 
   return (

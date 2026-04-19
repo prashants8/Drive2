@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import { UserFile } from '@/src/types';
 import { Button } from '../ui/Button';
-import { X, Globe, Lock, Link as LinkIcon, Copy, Check } from 'lucide-react';
+import { X, Globe, Lock, Link as LinkIcon, Copy, Check, Eye, Edit3 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface ShareFileModalProps {
   file: UserFile;
   onClose: () => void;
-  onTogglePublic: (file: UserFile) => Promise<void>;
+  onTogglePublic: (file: UserFile, permission?: 'view' | 'edit') => Promise<void>;
 }
 
 export const ShareFileModal: React.FC<ShareFileModalProps> = ({ file, onClose, onTogglePublic }) => {
   const [copied, setCopied] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [permission, setPermission] = useState<'view' | 'edit'>(file.permission || 'view');
 
   const shareUrl = `${window.location.origin}/share/${file.share_token}`;
 
@@ -23,10 +24,17 @@ export const ShareFileModal: React.FC<ShareFileModalProps> = ({ file, onClose, o
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleToggle = async () => {
+  const handleToggle = async (newPermission?: 'view' | 'edit') => {
     setUpdating(true);
-    await onTogglePublic(file);
+    await onTogglePublic(file, newPermission || permission);
     setUpdating(false);
+  };
+
+  const handlePermissionChange = async (p: 'view' | 'edit') => {
+    setPermission(p);
+    if (file.is_public) {
+      await handleToggle(p);
+    }
   };
 
   return (
@@ -51,11 +59,36 @@ export const ShareFileModal: React.FC<ShareFileModalProps> = ({ file, onClose, o
               <p className="text-xs text-slate-500 mt-0.5">Allow anyone with the link to view this file.</p>
             </div>
             <button 
-              onClick={handleToggle}
+              onClick={() => handleToggle()}
               disabled={updating}
               className={`w-12 h-6 rounded-full relative transition-colors ${file.is_public ? 'bg-indigo-600' : 'bg-slate-800'}`}
             >
               <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${file.is_public ? 'left-7' : 'left-1'}`} />
+            </button>
+          </div>
+
+          <div className="pt-4 border-t border-slate-800 flex gap-2">
+            <button 
+              disabled={!file.is_public && !updating}
+              onClick={() => handlePermissionChange('view')}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border text-xs font-bold transition-all ${
+                permission === 'view' 
+                  ? 'bg-indigo-600 border-indigo-500 text-white' 
+                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-white'
+              } ${!file.is_public && 'opacity-50 cursor-not-allowed'}`}
+            >
+              <Eye className="w-4 h-4" /> Viewer
+            </button>
+            <button 
+              disabled={!file.is_public && !updating}
+              onClick={() => handlePermissionChange('edit')}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border text-xs font-bold transition-all ${
+                permission === 'edit' 
+                  ? 'bg-indigo-600 border-indigo-500 text-white' 
+                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-white'
+              } ${!file.is_public && 'opacity-50 cursor-not-allowed'}`}
+            >
+              <Edit3 className="w-4 h-4" /> Editor
             </button>
           </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/src/lib/supabase';
-import { UserFile, UserFolder } from '@/src/types';
+import { UserFile, UserFolder, FileVersion } from '@/src/types';
 import toast from 'react-hot-toast';
 
 export function useStorage(userId: string | undefined) {
@@ -10,6 +10,9 @@ export function useStorage(userId: string | undefined) {
   const [uploading, setUploading] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
 
+  const [view, setView] = useState<'all' | 'trash'>('all');
+  const [versions, setVersions] = useState<Record<string, FileVersion[]>>({});
+
   const fetchFolders = useCallback(async () => {
     if (!userId) return;
     try {
@@ -17,14 +20,16 @@ export function useStorage(userId: string | undefined) {
         .from('folders')
         .select('*')
         .eq('user_id', userId)
+        .eq('is_trashed', view === 'trash')
         .order('name', { ascending: true });
 
       if (error) throw error;
       setFolders(data || []);
     } catch (error: any) {
       console.error('Error fetching folders:', error.message);
+      toast.error('Error fetching folders: ' + error.message);
     }
-  }, [userId]);
+  }, [userId, view]);
 
   const fetchFiles = useCallback(async () => {
     if (!userId) return;
@@ -34,12 +39,15 @@ export function useStorage(userId: string | undefined) {
         .from('files')
         .select('*')
         .eq('user_id', userId)
+        .eq('is_trashed', view === 'trash')
         .order('created_at', { ascending: false });
 
-      if (currentFolderId) {
-        query = query.eq('folder_id', currentFolderId);
-      } else {
-        query = query.is('folder_id', null);
+      if (view !== 'trash') {
+        if (currentFolderId) {
+          query = query.eq('folder_id', currentFolderId);
+        } else {
+          query = query.is('folder_id', null);
+        }
       }
 
       const { data, error } = await query;
@@ -51,10 +59,16 @@ export function useStorage(userId: string | undefined) {
     } finally {
       setLoading(false);
     }
-  }, [userId, currentFolderId]);
+  }, [userId, currentFolderId, view]);
 
   const createFolder = async (name: string) => {
     if (!userId) return;
+    
+    if (folders.some(f => f.name.toLowerCase() === name.toLowerCase() && f.parent_id === currentFolderId)) {
+      toast.error(`A folder named "${name}" already exists here.`);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('folders')
@@ -74,49 +88,97 @@ export function useStorage(userId: string | undefined) {
     }
   };
 
-  const uploadFile = async (file: File) => {
+  const renameFolder = async (folder: UserFolder, newName: string) => {
     if (!userId) return;
-    
-    // Check for duplicate name in current scope
-    if (files.some(f => f.file_name === file.name)) {
-      toast.error(`A file named "${file.name}" already exists here.`);
+
+    if (folders.some(f => f.name.toLowerCase() === newName.toLowerCase() && f.parent_id === folder.parent_id && f.id !== folder.id)) {
+      toast.error(`A folder named "${newName}" already exists here.`);
       return;
     }
 
     try {
-      setUploading(true);
+      const { error } = await supabase
+        .from('folders')
+        .update({ name: newName })
+        .eq('id', folder.id);
+
+      if (error) throw error;
       
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${userId}/${Math.random().toString(36).substring(2)}.${fileExt}`;
+      setFolders(prev => prev.map(f => f.id === folder.id ? { ...f, name: newName } : f));
+      toast.success('Folder renamed');
+    } catch (error: any) {
+      toast.error('Error renaming folder: ' + error.message);
+    }
+  };
+
+  const deleteFolder = async (folder: UserFolder) => {
+    if (!userId) return;
+    try {
+      // Note: This won't delete files in storage. 
+      // In a real app, you'd want a database trigger or a server side function 
+      // to clean up storage objects when the folder/file records are deleted.
+      const { error } = await supabase
+        .from('folders')
+        .delete()
+        .eq('id', folder.id);
+
+      if (error) throw error;
       
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('user-files')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('user-files')
-        .getPublicUrl(fileName);
-
-      const { error: dbError } = await supabase.from('files').insert({
-        file_name: file.name,
-        file_url: publicUrl,
-        file_type: file.type,
-        file_size: file.size,
-        user_id: userId,
-        folder_id: currentFolderId
-      });
-
-      if (dbError) throw dbError;
-
-      toast.success('File uploaded successfully!');
+      setFolders(prev => prev.filter(f => f.id !== folder.id));
+      toast.success('Folder deleted');
+      // Refetch both to ensure local state is synced with DB cascade
+      fetchFolders();
       fetchFiles();
     } catch (error: any) {
-      toast.error('Error uploading file: ' + error.message);
-    } finally {
-      setUploading(false);
+      toast.error('Error deleting folder: ' + error.message);
     }
+  };
+
+  const uploadFile = async (newFiles: File[]) => {
+    if (!userId) return;
+    
+    setUploading(true);
+    // Track local file names to avoid duplicates within the SAME batch
+    const currentBatchNames = new Set<string>();
+    
+    for (const file of newFiles) {
+      if (files.some(f => f.file_name === file.name) || currentBatchNames.has(file.name)) {
+        toast.error(`A file named "${file.name}" already exists here.`);
+        continue;
+      }
+      currentBatchNames.add(file.name);
+
+      try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${userId}/${Math.random().toString(36).substring(2)}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('user-files')
+          .upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('user-files')
+          .getPublicUrl(fileName);
+
+        const { error: dbError } = await supabase.from('files').insert({
+          file_name: file.name,
+          file_url: publicUrl,
+          file_type: file.type,
+          file_size: file.size,
+          user_id: userId,
+          folder_id: currentFolderId
+        });
+
+        if (dbError) throw dbError;
+        toast.success(`${file.name} uploaded successfully!`);
+      } catch (error: any) {
+        toast.error(`Error uploading ${file.name}: ` + error.message);
+      }
+    }
+    setUploading(false);
+    fetchFiles();
   };
 
   const renameFile = async (file: UserFile, newName: string) => {
@@ -157,7 +219,7 @@ export function useStorage(userId: string | undefined) {
     }
   };
 
-  const togglePublicAccess = async (file: UserFile) => {
+  const togglePublicAccess = async (file: UserFile, permission: 'view' | 'edit' = 'view') => {
     try {
       const isPublic = !file.is_public;
       const shareToken = isPublic ? Math.random().toString(36).substring(2, 15) : null;
@@ -166,16 +228,85 @@ export function useStorage(userId: string | undefined) {
         .from('files')
         .update({ 
           is_public: isPublic,
-          share_token: shareToken
+          share_token: shareToken,
+          permission: permission
         })
         .eq('id', file.id);
 
       if (error) throw error;
       
-      setFiles(prev => prev.map(f => f.id === file.id ? { ...f, is_public: isPublic, share_token: shareToken } : f));
-      toast.success(isPublic ? 'File shared publicly' : 'Sharing disabled');
+      setFiles(prev => prev.map(f => f.id === file.id ? { ...f, is_public: isPublic, share_token: shareToken, permission } : f));
+      toast.success(isPublic ? `File shared (${permission})` : 'Sharing disabled');
     } catch (error: any) {
       toast.error('Error updating sharing: ' + error.message);
+    }
+  };
+
+  const moveToTrash = async (item: UserFile | UserFolder, type: 'file' | 'folder') => {
+    try {
+      const table = type === 'file' ? 'files' : 'folders';
+      const { error } = await supabase
+        .from(table)
+        .update({ is_trashed: true })
+        .eq('id', item.id);
+
+      if (error) throw error;
+      toast.success(`${type === 'file' ? 'File' : 'Folder'} moved to Trash`);
+      fetchFiles();
+      fetchFolders();
+    } catch (error: any) {
+      toast.error('Error: ' + error.message);
+    }
+  };
+
+  const restoreFromTrash = async (item: UserFile | UserFolder, type: 'file' | 'folder') => {
+    try {
+      const table = type === 'file' ? 'files' : 'folders';
+      const { error } = await supabase
+        .from(table)
+        .update({ is_trashed: false })
+        .eq('id', item.id);
+
+      if (error) throw error;
+      toast.success(`${type === 'file' ? 'File' : 'Folder'} restored`);
+      fetchFiles();
+      fetchFolders();
+    } catch (error: any) {
+      toast.error('Error restoring: ' + error.message);
+    }
+  };
+
+  const fetchVersions = async (fileId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('file_versions')
+        .select('*')
+        .eq('file_id', fileId)
+        .order('version_number', { ascending: false });
+
+      if (error) throw error;
+      setVersions(prev => ({ ...prev, [fileId]: data || [] }));
+      return data;
+    } catch (error: any) {
+      toast.error('Error fetching versions: ' + error.message);
+    }
+  };
+
+  const restoreVersion = async (file: UserFile, version: FileVersion) => {
+    try {
+      const { error } = await supabase
+        .from('files')
+        .update({ 
+          file_url: version.file_url,
+          version: version.version_number
+        })
+        .eq('id', file.id);
+
+      if (error) throw error;
+      toast.success(`Restored to version ${version.version_number}`);
+      fetchFiles();
+    } catch (error: any) {
+      toast.error('Error restoring version: ' + error.message);
     }
   };
 
@@ -208,10 +339,21 @@ export function useStorage(userId: string | undefined) {
     if (!userId) return;
     try {
       setUploading(true);
+      
+      // CREATE A VERSION BEFORE SAVING NEW CONTENT
+      const { error: versionError } = await supabase.from('file_versions').insert({
+        file_id: file.id,
+        file_url: file.file_url,
+        version_number: file.version,
+        created_by: userId
+      });
+      if (versionError) throw versionError;
+
       const url = new URL(file.file_url);
       const pathParts = url.pathname.split('/');
       const fileName = pathParts[pathParts.length - 1];
-      const storagePath = `${userId}/${fileName}`;
+      // Use a versioned path if we want true history in storage too
+      const storagePath = `${userId}/${file.id}_v${file.version + 1}_${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('user-files')
@@ -219,10 +361,19 @@ export function useStorage(userId: string | undefined) {
 
       if (uploadError) throw uploadError;
 
+      const { data: { publicUrl } } = supabase.storage
+        .from('user-files')
+        .getPublicUrl(storagePath);
+
       const newSize = content instanceof Blob ? content.size : new Blob([content]).size;
       const { error: dbError } = await supabase
         .from('files')
-        .update({ file_size: newSize })
+        .update({ 
+          file_size: newSize,
+          file_url: publicUrl,
+          version: file.version + 1,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', file.id);
 
       if (dbError) throw dbError;
@@ -272,6 +423,8 @@ export function useStorage(userId: string | undefined) {
     currentFolderId,
     setCurrentFolderId,
     createFolder,
+    renameFolder,
+    deleteFolder,
     uploadFile, 
     renameFile, 
     moveFile,
@@ -280,6 +433,14 @@ export function useStorage(userId: string | undefined) {
     saveFileContent, 
     getFileContent, 
     getFileArrayBuffer,
-    fetchFiles 
+    fetchFiles,
+    // Advanced Features
+    view,
+    setView,
+    moveToTrash,
+    restoreFromTrash,
+    versions,
+    fetchVersions,
+    restoreVersion
   };
 }
