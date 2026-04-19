@@ -21,15 +21,19 @@ export default defineConfig(({mode}) => {
       hmr: process.env.DISABLE_HMR !== 'true',
     },
     build: {
-      chunkSizeWarningLimit: 3000,
+      chunkSizeWarningLimit: 5000,
       reportCompressedSize: false,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-            'vendor-utils': ['@supabase/supabase-js', 'lucide-react', 'clsx', 'tailwind-merge'],
-            'vendor-editors': ['@monaco-editor/react', '@tiptap/react', '@tiptap/starter-kit', '@onlyoffice/document-editor-react'],
-            'vendor-files': ['xlsx', 'mammoth', 'papaparse'],
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              // Split vendor libraries into separate chunks
+              if (id.includes('@monaco-editor') || id.includes('monaco-editor')) return 'vendor-monaco';
+              if (id.includes('xlsx') || id.includes('mammoth') || id.includes('papaparse')) return 'vendor-files';
+              if (id.includes('@onlyoffice')) return 'vendor-onlyoffice';
+              if (id.includes('@tiptap')) return 'vendor-tiptap';
+              return 'vendor-core'; // Everything else
+            }
           },
         },
       },
